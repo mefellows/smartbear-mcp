@@ -1,0 +1,436 @@
+---
+openapi: 3.1.0
+
+info:
+  title: PactFlow AI API
+  description: The API for PactFlow's AI capabilities.
+  contact:
+    name: PactFlow Team
+    url: https://pactflow.io/
+
+servers:
+  - url: https://{tenant}.pactflow.io/api/ai
+    description: PactFlow tenant URL
+    variables:
+      tenant:
+        default: example
+        description: The tenant or organisation name.
+
+paths:
+  /generate:
+    post:
+      summary: Generate
+      description: Pact generation endpoint.
+      operationId: generate_generate_post
+      parameters:
+        - name: Authorization
+          in: header
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerationInput'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+components:
+  schemas:
+    EndpointMatcher:
+      properties:
+        path:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Path
+          description: >-
+            The path of the endpoint, e.g. `/users/{id}`.
+
+            This may exactly match an endpoint in the OpenAPI document, or may follow
+            standard glob syntax:
+
+            -   `?` matches a single character, excluding `/` -   `*` matches zero
+            or more characters, excluding `/` -   `**` matches zero or more characters,
+            including `/`
+
+            For example, `/users/*` would match `/users/123` but not `users/123/posts`,
+            and `/users/**` would match both. Each `?`, `*` and `**` may be escaped
+            with backslashes, e.g. `/users/\*\*` to literally match `users/` followed
+            by two asterisks.
+
+            The matching is performed on the paths as they appear in the OpenAPI document
+            without any URL encoding or normalization. There is no transformation
+            of `/hello world` to or from `/hello%20world`. Furthermore, any parameters
+            in the path are not expanded, e.g. `/users/{id}` will not match `/users/123`
+            and vice versa.
+        methods:
+          anyOf:
+            - items:
+                $ref: '#/components/schemas/HttpMethod'
+              type: array
+            - type: 'null'
+          title: Methods
+          description: >-
+            The HTTP methods of the endpoint to match, e.g. `GET` or `POST`.
+
+            If not provided (or set to `None`), any method can be matched.
+        statusCodes:
+          anyOf:
+            - items:
+                anyOf:
+                  - type: integer
+                  - type: string
+              type: array
+            - type: 'null'
+          title: Statuscodes
+          description: >-
+            The status codes of the response, e.g. `200`.
+
+            If not provided (or set to `None`), only successful status codes (`2XX`)
+            will be matched.
+
+            Each status code may either be an integer or a string representation of
+            an integer. Furthermore, an `X` may be used as a wildcard, e.g. `2XX`
+            to match any status code between `200` and `299` inclusive.
+        operationId:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Operationid
+          description: >-
+            OpenAPI operation ID.
+
+            If provided, the endpoint will be matched based on the operation ID in
+            the OpenAPI document. If the OpenAPI document makes use of operation IDs,
+            this can be a more reliable way to match endpoints.
+
+            Note that operation IDs are associated with a specific path and method,
+            and so may furthermore be combined with the `status_code` field.
+
+            This field also supports the following glob syntax:
+
+            -   `?` matches a single character -   `*` matches zero or more characters
+
+            For example, `get*` will match any operation ID starting with `get`, or
+            `*User?` to match any operation IDs such as `createUser`, `getUser`, `listUsers`,
+            etc. Each `?` and `*` may be escaped with backslashes.
+      type: object
+      title: EndpointMatcher
+      description: >-
+        An endpoint in an OpenAPI document.
+
+        This class provides a way to match specific paths, methods, status codes,
+        and operation IDs in an OpenAPI document, and is used to filter the interactions
+        to generate code snippets for.
+
+        All documents are combined using logical AND, i.e. all fields must match for
+        an endpoint to be considered a match. With the exception of `status_codes`,
+        any field may be left empty to match any value. The default for `status_codes`
+        is to match any successful status code (`2XX`).
+
+        This model can be deserialized from a plain string, which is assumed to represent
+        the path of the endpoint with all other fields taking their default values.
+    FileInput:
+      properties:
+        filename:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Filename
+          description: >-
+            File name.
+
+            Name of the file which can provide additional context when generating
+            the Pact test. This may also be used to infer the programming language.
+        body:
+          type: string
+          title: Body
+          description: >-
+            File contents.
+
+            The contents of the file to be provided as input. This must be a valid
+            UTF-8 string, and arbitrary binary data is not supported. Typically, this
+            will be piece of code, but it could also be a configuration file, some
+            JSON data, an OpenAPI document, or anything else that might be useful.
+        language:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Language
+          description: >-
+            File Language.
+
+            Hint to the LLM about the language of the file. If unspecified, the language
+            will be inferred from either:
+
+            1.  The filename extension, or 2.  A section of the code.
+      type: object
+      required:
+        - body
+      title: FileInput
+      description: >-
+        Input file.
+
+        A single file provided as input to the code generator. Quite often, multiple
+        files will be provided as input, and while naively concatenating them might
+        work, the LLM will have a much easier time if the individual file names are
+        provided.
+
+        This model can be deserialized from a plain string, which is assumed to represent
+        the path of the endpoint with all other fields taking their default values.
+    GenerationInput:
+      properties:
+        language:
+          anyOf:
+            - $ref: '#/components/schemas/GenerationLanguage'
+            - type: 'null'
+          description: >-
+            Generation target language.
+
+            The target language in which the Pact tests should be generated. If absent,
+            the language will be inferred from other inputs, such as any provided
+            code files.
+
+            This field is optional if and only if it can be inferred from other inputs.
+        requestResponse:
+          anyOf:
+            - $ref: '#/components/schemas/RequestResponsePair'
+            - type: 'null'
+          description: Request/response pair for the interaction.
+        code:
+          anyOf:
+            - items:
+                $ref: '#/components/schemas/FileInput'
+              type: array
+            - type: 'null'
+          title: Code
+          description: >-
+            Codebase.
+
+            Any collection of code files which contain information which is relevant
+            to the Pact generation process. This could include client code, data models,
+            and other utilities.
+
+            If used alongside with a request/response pair or an OpenAPI document,
+            this codebase will serve only a supporting role in the generation process.
+            On the other hand, if no request/response pair or OpenAPI document is
+            provided, the code will be inspected to identify the interactions and
+            generate the appropriate Pact tests.
+        openapi:
+          anyOf:
+            - $ref: '#/components/schemas/OpenApiWithMatcher'
+            - type: 'null'
+          description: >-
+            OpenAPI document and matcher.
+
+            If provided, the OpenAPI document which describes the API being tested
+            and is accompanied by a matcher which will be used to identify the interactions
+            in the OpenAPI document which are relevant to the Pact generation process.
+        additionalInstructions:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Additionalinstructions
+          description: >-
+            Additional instructions for the generation.
+
+            If provided, this field allows specifying extra guidelines or configurations.
+            This can be useful for handling special cases, overriding default behaviors,
+            or adding constraints to the existing generation logic.
+        testTemplate:
+          anyOf:
+            - $ref: '#/components/schemas/FileInput'
+            - type: 'null'
+          description: >-
+            Test template provided by the user for generation.
+
+            If provided, this field allows the system to use the provided template
+            as a basis for the generated Pact tests. This can be useful for ensuring
+            that the generated tests follow a specific structure, format, framework,
+            and best practices.
+      type: object
+      title: GenerationInput
+      description: Input for Pact generation.
+    GenerationLanguage:
+      type: string
+      enum:
+        - javascript
+        - typescript
+        - java
+        - golang
+        - dotnet
+        - kotlin
+        - swift
+        - php
+      title: GenerationLanguage
+      description: List of supported languages for code generation.
+    GenerationResponse:
+      properties:
+        id:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Id
+          description: Unique identification for the response.
+        code:
+          type: string
+          title: Code
+          description: Pact test generated by PactFlow AI.
+        language:
+          type: string
+          title: Language
+          description: Target language for the Pact test.
+      type: object
+      required:
+        - code
+        - language
+      title: GenerationResponse
+      description: Response from the LLM containing a code snippet.
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HttpMethod:
+      type: string
+      enum:
+        - GET
+        - PUT
+        - POST
+        - DELETE
+        - OPTIONS
+        - HEAD
+        - PATCH
+        - TRACE
+      title: HttpMethod
+      description: An HTTP method.
+    OpenApi:
+      properties:
+        openapi:
+          type: string
+          title: Openapi
+          description: >-
+            OpenAPI version.
+
+            This may alternatively be read from the `swagger` field for OpenAPI 2.0
+            documents.
+        paths:
+          additionalProperties:
+            additionalProperties:
+              anyOf:
+                - additionalProperties: true
+                  type: object
+                - {}
+            type: object
+          type: object
+          title: Paths
+        components:
+          anyOf:
+            - additionalProperties:
+                additionalProperties: true
+                type: object
+              type: object
+            - type: 'null'
+          title: Components
+          description: >-
+            OpenAPI 3+ components.
+
+            Support for OpenAPI 2 definitions is provided by hooking into the initialisation.
+      additionalProperties: true
+      type: object
+      required:
+        - openapi
+        - paths
+      title: OpenApi
+      description: OpenAPI Data.
+    OpenApiWithMatcher:
+      properties:
+        document:
+          $ref: '#/components/schemas/OpenApi'
+          description: >-
+            OpenAPI document.
+
+            The OpenAPI document which describes the API being tested. The OpenAPI
+            document will be used to identify the interactions and generate the appropriate
+            Pact tests.
+        matcher:
+          $ref: '#/components/schemas/EndpointMatcher'
+          description: >-
+            OpenAPI interaction matcher.
+
+            The matcher which will be used to identify the interactions in the OpenAPI
+            document. As OpenAPI documents can be quite large and may contain many
+            redundant interactions, this matcher should be used to filter out the
+            endpoint, method, and status code which are relevant to the Pact generation
+            process.
+      type: object
+      required:
+        - document
+        - matcher
+      title: OpenApiWithMatcher
+      description: OpenAPI document with matcher.
+    RequestResponsePair:
+      properties:
+        request:
+          $ref: '#/components/schemas/FileInput'
+          description: >-
+            Request payload.
+
+            The request portion of the interaction. The format is very flexible, and
+            can be a simple HTTP/1.1 payload, a portion of a Gherkin scenario, or
+            any other text format which describes the request.
+        response:
+          $ref: '#/components/schemas/FileInput'
+          description: >-
+            Response payload.
+
+            The response portion of the interaction. As with the request, the format
+            is very flexible.
+      type: object
+      required:
+        - request
+        - response
+      title: RequestResponsePair
+      description: Request/response pair for an interaction.
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+              - type: string
+              - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+        - loc
+        - msg
+        - type
+      title: ValidationError
