@@ -70,6 +70,7 @@ async function main() {
     console.log("Registering PactFlow client with MCP server");
     const pactFlowClient = new PactFlowClient(pactBrokerToken, pactBrokerUrl);
     pactFlowClient.registerTools(server);
+    pactFlowClient.registerResources(server);
   }
   
   // TODO: make a Pact Broker specific one without the pactflow features
